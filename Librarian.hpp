@@ -33,5 +33,3 @@ public:
 };
 
 #endif // LIBRARIAN_HPP
-
-
