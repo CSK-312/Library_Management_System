@@ -1,5 +1,5 @@
 #include "Librarian.hpp"
-#include "Library.hpp"  // Full definition required for Library management functions.
+#include "Library.hpp" 
 #include "Book.hpp"
 #include "Student.hpp"
 #include "Faculty.hpp"
@@ -29,6 +29,10 @@ void Librarian::Return_book(const std::string &book_id, Library *library) {
 void Librarian::addBook(Library *lib, const string &Title, const string &Author, const string &Publisher,
                         int Year, const string &ISBN, const string &book_id) {
     Book *book = new Book(Title, Author, Publisher, Year, book_id, ISBN);
+    if(lib->get_book(book_id) != nullptr) {
+        cout << "Book ID already exists!" << endl;
+        return;
+    }
     lib->add_Book(book);
 }
 
@@ -45,7 +49,15 @@ void Librarian::updateBook(Library *lib, const string &book_id, const string &ne
 
 void Librarian::addStudent(Library *lib, const string &Name , const string &id , const string &pwd) {
     if(lib->get_student(id) != nullptr) {
-        cout << "Student ID already exists!" << endl;
+        cout << "User ID already exists!" << endl;
+        return;
+    }
+    if(lib->get_faculty(id) != nullptr) {
+        cout << "User ID already exists!" << endl;
+        return;
+    }
+    if(lib->get_librarian(id) != nullptr) {
+        cout << "User ID already exists!" << endl;
         return;
     }
     Student *stud = new Student(Name, id, pwd);
@@ -54,7 +66,15 @@ void Librarian::addStudent(Library *lib, const string &Name , const string &id ,
 
 void Librarian::addFaculty(Library *lib, const string &Name , const string &id , const string &pwd) {
     if(lib->get_faculty(id) != nullptr) {
-        cout << "Faculty ID already exists!" << endl;
+        cout << "User ID already exists!" << endl;
+        return;
+    }
+    if(lib->get_student(id) != nullptr) {
+        cout << "User ID already exists!" << endl;
+        return;
+    }
+    if(lib->get_librarian(id) != nullptr) {
+        cout << "User ID already exists!" << endl;
         return;
     }
     Faculty *fac = new Faculty(Name, id, pwd);
@@ -63,7 +83,15 @@ void Librarian::addFaculty(Library *lib, const string &Name , const string &id ,
 
 void Librarian::addLibrarian(Library *lib, const string &Name , const string &id , const string &pwd) {
     if(lib->get_librarian(id) != nullptr) {
-        cout << "Librarian ID already exists!" << endl;
+        cout << "User ID already exists!" << endl;
+        return;
+    }
+    if(lib->get_student(id) != nullptr) {
+        cout << "User ID already exists!" << endl;
+        return;
+    }
+    if(lib->get_faculty(id) != nullptr) {
+        cout << "User ID already exists!" << endl;
         return;
     }
     Librarian *libra = new Librarian(Name, id, pwd);

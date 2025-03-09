@@ -7,7 +7,6 @@ Book* Library::get_book(const string &book_id) {
             return book;
         }
     }
-    cout << "Book Doesn't Exist!" << endl;
     return nullptr;
 }
 
@@ -45,23 +44,27 @@ void Library::updateBook(const string &book_id, const string &newTitle, const st
 
 // Show all books
 void Library::show_all_books() {
+    if(books.empty()) {
+        cout << "No books in the library!" << endl;
+        return;
+    }
     cout << "Books in the library:" << endl;
-    cout << string(91, '-') << endl;
+    cout << string(110, '-') << endl;
     cout << left << setw(10) << "Book ID" 
          << setw(20) << "Title" 
          << setw(20) << "Author" 
          << setw(20) << "Publisher" 
          << setw(6) << "Year" 
-         << setw(15) << "ISBN" 
+         << setw(20) << "ISBN" 
          << "Status" << endl;
-    cout << string(91, '-') << endl;
+    cout << string(110, '-') << endl;
     for (auto book : books) {
         cout << left << setw(10) << book->get_bookid() 
              << setw(20) << book->get_Title() 
              << setw(20) << book->get_Author() 
              << setw(20) << book->get_Publisher() 
              << setw(6) << book->get_year() 
-             << setw(15) << book->get_ISBN() 
+             << setw(20) << book->get_ISBN() 
              << setw(10);
         switch (book->get_status()) {
             case Status::AVAILABLE:
@@ -76,7 +79,7 @@ void Library::show_all_books() {
         }
         cout << endl;
     }
-    cout << string(91, '-') << endl;
+    cout << string(110, '-') << endl;
 }
 
 // Add functions:
@@ -168,7 +171,9 @@ void Library::save_data() {
                 << b->get_year() << ","
                 << b->get_ISBN() << ","
                 << statusToInt(b->get_status()) << ","
-                << b->get_bookid() << "\n";
+                << b->get_bookid() << ","
+                << b->get_reservedBy_studid() << ","
+                << b->get_reservedBy_facid() << "\n";
     }
     outFile << "\n";
 
@@ -176,14 +181,16 @@ void Library::save_data() {
     outFile << "#STUDENTS\n";
     outFile << students.size() << "\n";
     for (auto* s : students) {
-        // Save basic user info.
+        // Save basic user info including accumulated fine and notif.
         outFile << s->get_Name() << ","
                 << s->get_user_id() << ","
                 << s->get_password() << ","
                 << s->get_borrowlimit() << ","
                 << s->get_maxBorrowPeriod() << ","
-                << s->get_fine_rate();
-
+                << s->get_fine_rate() << ","
+                << s->get_acc().getFine() << ","
+                << s->get_notif();
+        
         // Save borrowed records.
         auto& borrowedRecords = s->get_acc().getBorrowedBooks();
         outFile << "," << borrowedRecords.size();
@@ -192,13 +199,15 @@ void Library::save_data() {
             time_t borrowTime = rec.second;
             outFile << "," << bookPtr->get_bookid() << "," << borrowTime;
         }
-        // Save borrowing history.
+        
+        // Save borrowing history (each record: book_id, borrowTime, returnTime).
         auto& history = s->get_acc().getBorrowingHistory();
         outFile << "," << history.size();
         for (auto &rec : history) {
             Book* bookPtr = rec.first;
-            time_t returnTime = rec.second;
-            outFile << "," << bookPtr->get_bookid() << "," << returnTime;
+            time_t borrowTime = rec.second.first;
+            time_t returnTime = rec.second.second;
+            outFile << "," << bookPtr->get_bookid() << "," << borrowTime << "," << returnTime;
         }
         outFile << "\n";
     }
@@ -213,7 +222,9 @@ void Library::save_data() {
                 << f->get_password() << ","
                 << f->get_borrowlimit() << ","
                 << f->get_maxBorrowPeriod() << ","
-                << f->get_fine_rate();
+                << f->get_fine_rate() << ","
+                << f->get_acc().getFine() << ","
+                << f->get_notif();
         auto& borrowedRecords = f->get_acc().getBorrowedBooks();
         outFile << "," << borrowedRecords.size();
         for (auto &rec : borrowedRecords) {
@@ -225,8 +236,9 @@ void Library::save_data() {
         outFile << "," << history.size();
         for (auto &rec : history) {
             Book* bookPtr = rec.first;
-            time_t returnTime = rec.second;
-            outFile << "," << bookPtr->get_bookid() << "," << returnTime;
+            time_t borrowTime = rec.second.first;
+            time_t returnTime = rec.second.second;
+            outFile << "," << bookPtr->get_bookid() << "," << borrowTime << "," << returnTime;
         }
         outFile << "\n";
     }
@@ -261,130 +273,300 @@ void Library::load_data() {
 
     while (getline(inFile, line)) {
         if (line.empty()) continue;
-        if (line == "#BOOKS" || line == "#STUDENTS" ||
-            line == "#FACULTY" || line == "#LIBRARIANS") {
+
+        // Check for a section header.
+        if (line[0] == '#') {
             section = line.substr(1); // Remove '#' to get section name.
             readingCount = true;
             continue;
         }
+
+        // Read the number of items in the section.
         if (readingCount) {
-            itemsToRead = stoi(line);
+            try {
+                itemsToRead = stoi(line);
+            } catch (const std::exception &e) {
+                cerr << "Error converting item count: " << line << ". Exception: " << e.what() << "\n";
+                continue;
+            }
             readingCount = false;
             continue;
         }
-        // Tokenize the current line (fields separated by commas).
+
+        // Tokenize the current line.
         stringstream ss(line);
         vector<string> tokens;
         string token;
         while (getline(ss, token, ',')) {
             tokens.push_back(token);
         }
-        itemsToRead--;
 
+        // --- BOOKS Section ---
         if (section == "BOOKS") {
-            // Expected tokens: [Title, Author, Publisher, Year, ISBN, statusInt, book_id]
+            const size_t expected_tokens = 9;
+            while (tokens.size() < expected_tokens)
+                tokens.push_back("");
+
+            if (tokens.size() < 7) { // At least 7 mandatory fields needed.
+                cerr << "Malformed book record: " << line << "\n";
+                continue;
+            }
             string title = tokens[0];
             string author = tokens[1];
             string publisher = tokens[2];
-            int year = stoi(tokens[3]);
+            int year = 0;
+            try {
+                year = stoi(tokens[3]);
+            } catch (const std::exception &e) {
+                cerr << "Conversion error for year in record: " << line << "\n";
+                continue;
+            }
             string isbn = tokens[4];
-            int statusVal = stoi(tokens[5]);
+            int statusVal = 0;
+            try {
+                statusVal = stoi(tokens[5]);
+            } catch (const std::exception &e) {
+                cerr << "Conversion error for status in record: " << line << "\n";
+                continue;
+            }
             string book_id = tokens[6];
+            string reservedBy_studid = tokens[7];
+            string reservedBy_facid = tokens[8];
 
             Book* newBook = new Book(title, author, publisher, year, book_id, isbn);
             newBook->set_ISBN(isbn);
             newBook->set_status(intToStatus(statusVal));
+            newBook->set_reservedBy_studid(reservedBy_studid);
+            newBook->set_reservedBy_facid(reservedBy_facid);
             add_Book(newBook);
         }
+        // --- STUDENTS Section ---
         else if (section == "STUDENTS") {
-            // Expected tokens: [Name, user_id, password, borrowlimit, maxBorrowPeriod, fine_rate, borrowedCount, ... borrowed records ..., historyCount, ... history records ...]
+            // Expected tokens now:
+            // [Name, user_id, password, borrowlimit, maxBorrowPeriod, fine_rate, Fine, notif, borrowedCount, ... borrowed records ..., historyCount, ... history records ...]
+            if (tokens.size() < 9) {
+                cerr << "Malformed student record: " << line << "\n";
+                continue;
+            }
             string name = tokens[0];
             string uid = tokens[1];
             string pwd = tokens[2];
-            int blimit = stoi(tokens[3]);
-            int maxPeriod = stoi(tokens[4]);
-            double frate = stod(tokens[5]);
-            int borrowedCount = stoi(tokens[6]);
+            int blimit = 0;
+            try {
+                blimit = stoi(tokens[3]);
+            } catch (const std::exception &e) {
+                cerr << "Conversion error for borrowlimit in record: " << line << "\n";
+                continue;
+            }
+            int maxPeriod = 0;
+            try {
+                maxPeriod = stoi(tokens[4]);
+            } catch (const std::exception &e) {
+                cerr << "Conversion error for maxBorrowPeriod in record: " << line << "\n";
+                continue;
+            }
+            double frate = 0;
+            try {
+                frate = stod(tokens[5]);
+            } catch (const std::exception &e) {
+                cerr << "Conversion error for fine_rate in record: " << line << "\n";
+                continue;
+            }
+            double fineAcc = 0;
+            try {
+                fineAcc = stod(tokens[6]);
+            } catch (const std::exception &e) {
+                cerr << "Conversion error for fineAcc in record: " << line << "\n";
+                continue;
+            }
+            string notif = tokens[7];  // Notification field
+            int borrowedCount = 0;
+            try {
+                borrowedCount = stoi(tokens[8]);
+            } catch (const std::exception &e) {
+                cerr << "Conversion error for borrowedCount in record: " << line << "\n";
+                continue;
+            }
 
             Student* stud = new Student(name, uid, pwd);
             stud->set_borrowlimit(blimit);
             stud->set_maxBorrowPeriod(maxPeriod);
             stud->set_fine_rate(frate);
+            stud->get_acc().setFine(fineAcc);
+            stud->set_notif(notif);
 
-            int idx = 7;
-            // Load borrowed records.
+            int idx = 9;
+            // Process borrowed records.
             for (int i = 0; i < borrowedCount; i++) {
+                if (idx + 1 >= tokens.size()){
+                    cerr << "Insufficient tokens for borrowed records in student: " << line << "\n";
+                    break;
+                }
                 string b_id = tokens[idx++];
-                time_t borrowTime = static_cast<time_t>(stoll(tokens[idx++]));
+                time_t borrowTime = 0;
+                try {
+                    borrowTime = static_cast<time_t>(stoll(tokens[idx++]));
+                } catch (const std::exception &e) {
+                    cerr << "Conversion error for borrowed record time in student: " << line << "\n";
+                    break;
+                }
                 Book* bptr = get_book(b_id);
                 if (bptr) {
                     stud->get_acc().addBorrowedBook(bptr);
-                    // Optionally, adjust the borrow time if you have a setter.
                 }
             }
-            // Load borrowing history (now as pairs: book_id and time returned).
-            int historyCount = 0;
+            // Process borrowing history.
             if (idx < tokens.size()) {
-                historyCount = stoi(tokens[idx++]);
+                int historyCount = 0;
+                try {
+                    historyCount = stoi(tokens[idx++]);
+                } catch (const std::exception &e) {
+                    cerr << "Conversion error for historyCount in student: " << line << "\n";
+                    continue;
+                }
                 for (int i = 0; i < historyCount; i++) {
+                    if (idx + 2 >= tokens.size()){
+                        cerr << "Insufficient tokens for history records in student: " << line << "\n";
+                        break;
+                    }
                     string b_id = tokens[idx++];
-                    time_t returnTime = static_cast<time_t>(stoll(tokens[idx++]));
+                    time_t borrowTime = 0;
+                    time_t returnTime = 0;
+                    try {
+                        borrowTime = static_cast<time_t>(stoll(tokens[idx++]));
+                        returnTime = static_cast<time_t>(stoll(tokens[idx++]));
+                    } catch (const std::exception &e) {
+                        cerr << "Conversion error for history record times in student: " << line << "\n";
+                        break;
+                    }
                     Book* bptr = get_book(b_id);
                     if (bptr) {
-                        stud->get_acc().addToBorrowingHistory(bptr, returnTime);
+                        stud->get_acc().addToBorrowingHistory(bptr, borrowTime, returnTime);
                     }
                 }
             }
             add_student(stud);
         }
+        // --- FACULTY Section ---
         else if (section == "FACULTY") {
-            // Expected tokens: [Name, user_id, password, borrowlimit, maxBorrowPeriod, fine_rate, borrowedCount, ... borrowed records ..., historyCount, ... history records ...]
+            // Expected tokens:
+            // [Name, user_id, password, borrowlimit, maxBorrowPeriod, fine_rate, Fine, notif, borrowedCount, ... borrowed records ..., historyCount, ... history records ...]
+            if (tokens.size() < 9) {
+                cerr << "Malformed faculty record: " << line << "\n";
+                continue;
+            }
             string name = tokens[0];
             string uid = tokens[1];
             string pwd = tokens[2];
-            int blimit = stoi(tokens[3]);
-            int maxPeriod = stoi(tokens[4]);
-            double frate = stod(tokens[5]);
-            int borrowedCount = stoi(tokens[6]);
+            int blimit = 0;
+            try {
+                blimit = stoi(tokens[3]);
+            } catch (const std::exception &e) {
+                cerr << "Conversion error for borrowlimit in faculty record: " << line << "\n";
+                continue;
+            }
+            int maxPeriod = 0;
+            try {
+                maxPeriod = stoi(tokens[4]);
+            } catch (const std::exception &e) {
+                cerr << "Conversion error for maxBorrowPeriod in faculty record: " << line << "\n";
+                continue;
+            }
+            double frate = 0;
+            try {
+                frate = stod(tokens[5]);
+            } catch (const std::exception &e) {
+                cerr << "Conversion error for fine_rate in faculty record: " << line << "\n";
+                continue;
+            }
+            double fineAcc = 0;
+            try {
+                fineAcc = stod(tokens[6]);
+            } catch (const std::exception &e) {
+                cerr << "Conversion error for fineAcc in faculty record: " << line << "\n";
+                continue;
+            }
+            string notif = tokens[7];  // Notification field
+            int borrowedCount = 0;
+            try {
+                borrowedCount = stoi(tokens[8]);
+            } catch (const std::exception &e) {
+                cerr << "Conversion error for borrowedCount in faculty record: " << line << "\n";
+                continue;
+            }
 
             Faculty* fac = new Faculty(name, uid, pwd);
             fac->set_borrowlimit(blimit);
             fac->set_maxBorrowPeriod(maxPeriod);
             fac->set_fine_rate(frate);
+            fac->get_acc().setFine(fineAcc);
+            fac->set_notif(notif);
 
-            int idx = 7;
-            for (int i = 0; i < borrowedCount; i++) {
+            int idx = 9;
+            for (int i = 0; i < borrowedCount; i++){
+                if (idx + 1 >= tokens.size()){
+                    cerr << "Insufficient tokens for borrowed records in faculty: " << line << "\n";
+                    break;
+                }
                 string b_id = tokens[idx++];
-                time_t borrowTime = static_cast<time_t>(stoll(tokens[idx++]));
+                time_t borrowTime = 0;
+                try {
+                    borrowTime = static_cast<time_t>(stoll(tokens[idx++]));
+                } catch (const std::exception &e) {
+                    cerr << "Conversion error for borrowed record time in faculty: " << line << "\n";
+                    break;
+                }
                 Book* bptr = get_book(b_id);
                 if (bptr) {
                     fac->get_acc().addBorrowedBook(bptr);
                 }
             }
-            int historyCount = 0;
-            if (idx < tokens.size()) {
-                historyCount = stoi(tokens[idx++]);
-                for (int i = 0; i < historyCount; i++) {
+            
+            if (idx < tokens.size()){
+                int historyCount = 0;
+                try {
+                    historyCount = stoi(tokens[idx++]);
+                } catch (const std::exception &e) {
+                    cerr << "Conversion error for historyCount in faculty record: " << line << "\n";
+                    continue;
+                }
+                for (int i = 0; i < historyCount; i++){
+                    if (idx + 2 >= tokens.size()){
+                        cerr << "Insufficient tokens for history records in faculty: " << line << "\n";
+                        break;
+                    }
                     string b_id = tokens[idx++];
-                    time_t returnTime = static_cast<time_t>(stoll(tokens[idx++]));
+                    time_t borrowTime = 0;
+                    time_t returnTime = 0;
+                    try {
+                        borrowTime = static_cast<time_t>(stoll(tokens[idx++]));
+                        returnTime = static_cast<time_t>(stoll(tokens[idx++]));
+                    } catch (const std::exception &e) {
+                        cerr << "Conversion error for history record times in faculty: " << line << "\n";
+                        break;
+                    }
                     Book* bptr = get_book(b_id);
                     if (bptr) {
-                        fac->get_acc().addToBorrowingHistory(bptr, returnTime);
+                        fac->get_acc().addToBorrowingHistory(bptr, borrowTime, returnTime);
                     }
                 }
             }
             add_faculty(fac);
         }
+        // --- LIBRARIANS Section ---
         else if (section == "LIBRARIANS") {
-            // Expected tokens: [Name, user_id, password]
+            if (tokens.size() < 3) {
+                cerr << "Malformed librarian record: " << line << "\n";
+                continue;
+            }
             string name = tokens[0];
             string uid = tokens[1];
             string pwd = tokens[2];
-
             Librarian* libUser = new Librarian(name, uid, pwd);
             add_librarian(libUser);
         }
 
+        itemsToRead--;
         if (itemsToRead == 0) {
             readingCount = true;
         }
@@ -393,5 +575,3 @@ void Library::load_data() {
     inFile.close();
     cout << "Data loaded successfully.\n";
 }
-
-

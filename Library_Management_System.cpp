@@ -35,22 +35,29 @@ static Status intToStatus(int st) {
 void studentApp(Student *stud, Library *lib) {
 
         std::cout << "\n\nHome:" << std::endl;
+        //If the notif is not empty, display it
+        if(stud->get_notif() != ""){
+            std::cout << "Notification: " << stud->get_notif() << std::endl;
+            stud->set_notif("");
+        }
         std::cout << "1.View all books" << std::endl;
         std::cout << "2. Borrow a book" << std::endl;
         std::cout << "3. Return a book" << std::endl;
-        std::cout << "4. View borrowed books" << std::endl;
-        std::cout << "5. View borrowing history" << std::endl;
-        std::cout << "6. View fines" << std::endl;
-        std::cout << "7. Pay fine" << std::endl;
-        std::cout << "8. View Profile" << std::endl;
-        std::cout << "9. Update Profile" << std::endl;
-        std::cout << "10. Exit" << std::endl;
+        std::cout << "4. Reserve a book" << std::endl;
+        std::cout << "5. View borrowed books" << std::endl;
+        std::cout << "6. View borrowing history" << std::endl;
+        std::cout << "7. View fines" << std::endl;
+        std::cout << "8. Pay fine" << std::endl;
+        std::cout << "9. View Profile" << std::endl;
+        std::cout << "10. Update Profile" << std::endl;
+        std::cout << "11. Exit" << std::endl;
         std::cout << "Enter your choice: ";
 
         int choice;
         std::cin >> choice;
         std::cin.ignore();
 
+        double amount;
         switch (choice) {
             case 1:
                 stud->View_all_books(lib);
@@ -69,22 +76,31 @@ void studentApp(Student *stud, Library *lib) {
                 stud->Return_book(book_id, lib);
                 break;
             }
-            case 4:
+            case 4: {
+                std::string book_id;
+                std::cout << "Enter the book ID: ";
+                std::getline(std::cin, book_id);
+                stud->Reserve_book(book_id, lib);
+                break;
+            }
+            case 5:
                 stud->View_borrowed_books();
                 break;
-            case 5:
+            case 6:
                 stud->View_borrowing_history();
                 break;
-            case 6:
+            case 7:
                 stud->DisplayFines();
                 break;
-            case 7:
-                stud->Pay_fine();
-                break;
             case 8:
+                std::cout << "Enter the amount you want to pay: ";
+                std::cin >> amount;
+                stud->Pay_fine(amount);
+                break;
+            case 9:
                 stud->viewProfile();
                 break;
-            case 9: {
+            case 10: {
                 std::string newName, newPassword;
                 std::cout << "Enter your new name: ";
                 std::getline(std::cin, newName);
@@ -93,7 +109,7 @@ void studentApp(Student *stud, Library *lib) {
                 stud->updateProfile(newName, newPassword);
                 break;
             }
-            case 10:
+            case 11:
                 std::cout << "Exiting..." << std::endl;
                 std::cout << "Thank you for using the Library Management System!" << std::endl;
                 return; // Exit the student loop
@@ -124,14 +140,20 @@ void studentApp(Student *stud, Library *lib) {
 void facultyApp(Faculty *fac, Library *lib) {
 
         std::cout << "\n\nHome:" << std::endl;
+        //If the notif is not empty, display it
+        if(fac->get_notif() != ""){
+            std::cout << "Notification: " << fac->get_notif() << std::endl;
+            fac->set_notif("");
+        }
         std::cout << "1. View all books " << std::endl;
         std::cout << "2. Borrow a book" << std::endl;
         std::cout << "3. Return a book" << std::endl;
-        std::cout << "4. View Borrowed Books" << std::endl;
-        std::cout << "5. View Borrowing History" << std::endl;
-        std::cout << "6. View Profile" << std::endl;
-        std::cout << "7. Update Profile" << std::endl;
-        std::cout << "8. Exit" << std::endl;
+        std::cout << "4. Reserve a book" << std::endl;
+        std::cout << "5. View Borrowed Books" << std::endl;
+        std::cout << "6. View Borrowing History" << std::endl;
+        std::cout << "7. View Profile" << std::endl;
+        std::cout << "8. Update Profile" << std::endl;
+        std::cout << "9. Exit" << std::endl;
         std::cout << "Enter your choice: ";
 
         int choice;
@@ -156,16 +178,23 @@ void facultyApp(Faculty *fac, Library *lib) {
                 fac->Return_book(book_id, lib);
                 break;
             }
-            case 4:
+            case 4: {
+                std::string book_id;
+                std::cout << "Enter the book ID: ";
+                std::getline(std::cin, book_id);
+                fac->Reserve_book(book_id, lib);
+                break;
+            }
+            case 5:
                 fac->View_borrowed_books();
                 break;
-            case 5:
+            case 6:
                 fac->View_borrowing_history();
                 break;
-            case 6:
+            case 7:
                 fac->viewProfile();
                 break;
-            case 7: {
+            case 8: {
                 std::string newName, newPassword;
                 std::cout << "Enter your new name: ";
                 std::getline(std::cin, newName);
@@ -174,7 +203,7 @@ void facultyApp(Faculty *fac, Library *lib) {
                 fac->updateProfile(newName, newPassword);
                 break;
             }
-            case 8:
+            case 9:
                 std::cout << "Exiting..." << std::endl;
                 std::cout << "Thank you for using the Library Management System!" << std::endl;
                 return; // Exit the faculty loop
@@ -443,5 +472,3 @@ int main(){
     lib->save_data();
     return 0;
 }
-
-

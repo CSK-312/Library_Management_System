@@ -49,7 +49,6 @@ public:
                 return user;
             }
         }
-        cout << typeName << " Doesn't Exist!" << endl;
         return nullptr;
     }
     // Get functions:
